@@ -36,7 +36,7 @@ from __future__ import print_function
 import logging
 import re as _re
 import bisect
-from six import StringIO
+from six import BytesIO
 from six.moves import range
 from PIL import Image
 import numpy as np
@@ -172,25 +172,33 @@ def image(tag, tensor):
     if not isinstance(tensor, np.ndarray):
         # try conversion, if failed then need handle by user.
         tensor = np.ndarray(tensor, dtype=np.float32)
-    shape = tensor.shape
-    height, width, channel = shape[0], shape[1], shape[2]
-    if channel == 1:
-        # walk around. PIL's setting on dimension.
-        tensor = np.reshape(tensor, (height, width))
-    image = make_image(tensor, height, width, channel)
+    if not 1 < tensor.ndim < 4:
+        raise ValueError("Expecting images to be 2 or 3 dimensional arrays."
+                         "The provided is " + str(tensor.ndim))
+    if tensor.dtype in (np.float16, np.float32, np.float64):
+        tensor = np.asarray(tensor * 255, np.uint8)
+    if tensor.ndim == 2:
+        height, width = tensor.shape
+    else:
+        height, width, channel = tensor.shape
+        if channel == 1:
+            # walk around. PIL's setting on dimension.
+            tensor = np.reshape(tensor, (height, width))
+    image = make_image(tensor, height, width)
     return Summary(value=[Summary.Value(tag=tag, image=image)])
 
 
-def make_image(tensor, height, width, channel):
+def make_image(tensor, height, width):
     """Convert an numpy representation image to Image protobuf"""
     image = Image.fromarray(tensor)
-    output = StringIO()
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    output = BytesIO()
     image.save(output, format='PNG')
     image_string = output.getvalue()
     output.close()
     return Summary.Image(height=height,
                          width=width,
-                         colorspace=channel,
                          encoded_image_string=image_string)
 
 
